@@ -6,23 +6,23 @@ extern crate combine;
 use std::collections::HashMap;
 
 #[derive(Clone)]
-pub enum Ast {
-    Lit(Value),
-    Variable(String),
-    Call(Box<Ast>, Vec<Ast>),
-    Define(String, Box<Ast>),
+pub enum Ast<'a> {
+    Lit(Value<'a>),
+    Variable(&'a str),
+    Call(Box<Ast<'a>>, Vec<Ast<'a>>),
+    Define(&'a str, Box<Ast<'a>>),
 }
 
 #[derive(Clone)]
-pub enum Value {
+pub enum Value<'a> {
     Void,
     False,
     Int(u64),
-    Function(Vec<String>, Vec<Ast>),
+    Function(Vec<&'a str>, Vec<Ast<'a>>),
     InbuiltFunc(fn(Vec<Value>) -> Value),
 }
 
-impl PartialEq for Value {
+impl<'a> PartialEq for Value<'a> {
     fn eq(&self, other: &Self) -> bool {
         use Value::*;
 
@@ -35,7 +35,7 @@ impl PartialEq for Value {
     }
 }
 
-pub fn eval(program: Ast, variables: &mut HashMap<String, Value>) -> Value {
+pub fn eval<'a>(program: Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) -> Value<'a> {
     use self::Ast::*;
     use self::Value::*;
 
@@ -83,7 +83,7 @@ pub fn eval(program: Ast, variables: &mut HashMap<String, Value>) -> Value {
         Define(name, value) => {
             let value = eval(*value, variables);
 
-            variables.insert(name, value);
+            variables.insert(&name, value);
 
             Void
         }
@@ -91,7 +91,7 @@ pub fn eval(program: Ast, variables: &mut HashMap<String, Value>) -> Value {
 }
 
 parser! {
-    pub fn expr[I]()(I) -> Ast where [I: combine::Stream<Item = char>] {
+    pub fn expr[I]()(I) -> Ast<'a> where [I: combine::Stream<Item = char>] {
         use combine::parser::char::*;
         use combine::*;
 
