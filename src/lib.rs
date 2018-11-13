@@ -4,6 +4,7 @@
 extern crate combine;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub enum Ast<'a> {
@@ -13,12 +14,17 @@ pub enum Ast<'a> {
     Define(&'a str, Box<Ast<'a>>),
 }
 
+pub struct Func<'a> {
+    args: Vec<&'a str>,
+    body: Vec<Ast<'a>>
+}
+
 #[derive(Clone)]
 pub enum Value<'a> {
     Void,
     False,
     Int(u64),
-    Function(Vec<&'a str>, Vec<Ast<'a>>),
+    Function(Rc<Func<'a>>),
     InbuiltFunc(fn(Vec<Value>) -> Value),
 }
 
@@ -49,11 +55,14 @@ pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) 
             let func = eval(func, variables);
 
             match func {
-                Function(args, body) => {
-                    // Start a new scope, so all variables defined in the body of the
-                    // function don't leak into the surrounding scope.
+                Function(func) => {
+                    // Start a new scope, so no variables defined in the body of the
+                    // function leak into the surrounding scope.
                     let mut new_scope = variables.clone();
-
+                    let &Func {
+                        ref args,
+                        ref body,
+                    } = &*func;
                     if arguments.len() != args.len() {
                         println!("Called function with incorrect number of arguments (expected {}, got {})", args.len(), arguments.len());
                     }
@@ -65,7 +74,7 @@ pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) 
 
                     let mut out = Void;
 
-                    for stmt in &body {
+                    for stmt in body {
                         out = eval(stmt, &mut new_scope);
                     }
 
@@ -92,7 +101,7 @@ pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) 
 
 parser! {
     pub fn expr['a, I]()(I) -> Ast<'a> where [
-        I: combine::Stream<Item = char, Range = &'a str> + combine::RangeStreamOnce
+        I: combine::RangeStream<Item = char, Range = &'a str>
     ] {
         use combine::parser::char::*;
         use combine::parser::range::recognize;
@@ -116,7 +125,7 @@ parser! {
             white!(lambda),
             white!(between(char('('), char(')'), many::<Vec<_>, _>(ident()))),
             many::<Vec<_>, _>(expr()),
-        ).map(|(_, a, b)| Ast::Lit(::Value::Function(a, b)));
+        ).map(|(_, args, body)| Ast::Lit(::Value::Function(Rc::new(Func{ args, body }))));
         let define = (white!(eq), ident(), expr()).map(|(_, a, b)| Ast::Define(a, Box::new(b)));
         let lit_num = recognize(skip_many1(digit()))
             .map(|i: &str| Ast::Lit(::Value::Int(i.parse().expect("Parsing integer failed"))));
