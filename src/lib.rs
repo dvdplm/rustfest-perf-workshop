@@ -6,7 +6,6 @@ extern crate fnv;
 
 use fnv::FnvHashMap as HashMap;
 
-//use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone)]
