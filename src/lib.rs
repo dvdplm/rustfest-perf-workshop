@@ -2,9 +2,9 @@
 #![recursion_limit="96"]
 #[macro_use]
 extern crate combine;
-extern crate fnv;
+extern crate hashbrown;
 
-use fnv::FnvHashMap as HashMap;
+use hashbrown::HashMap;
 
 use std::rc::Rc;
 
