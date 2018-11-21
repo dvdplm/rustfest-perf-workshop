@@ -58,26 +58,31 @@ pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) 
 
             match func {
                 Function(func) => {
-                    // Start a new scope, so no variables defined in the body of the
-                    // function leak into the surrounding scope.
-                    let mut new_scope = variables.clone();
-                    let &Func {
-                        ref args,
-                        ref body,
-                    } = &*func;
+                    let &Func { ref args, ref body, } = &*func;
                     if arguments.len() != args.len() {
                         println!("Called function with incorrect number of arguments (expected {}, got {})", args.len(), arguments.len());
                     }
 
-                    for (name, val) in args.into_iter().zip(arguments) {
-                        let val = eval(val, variables);
-                        new_scope.insert(name, val);
-                    }
-
                     let mut out = Void;
+                    if arguments.len() > 0 {
+                        // Start a new scope, so no variables defined in the body of the
+                        // function leak into the surrounding scope.
+                        let mut new_scope = variables.clone();
 
-                    for stmt in body {
-                        out = eval(stmt, &mut new_scope);
+                        for (name, val) in args.into_iter().zip(arguments) {
+                            let val = eval(val, variables);
+                            new_scope.insert(name, val);
+                        }
+
+
+                        for stmt in body {
+                            out = eval(stmt, &mut new_scope);
+                        }
+
+                    } else {
+                        for stmt in body {
+                            out = eval(stmt, variables);
+                        }
                     }
 
                     out
