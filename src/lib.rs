@@ -7,6 +7,7 @@ extern crate hashbrown;
 use hashbrown::HashMap;
 
 use std::rc::Rc;
+use std::borrow::Cow;
 
 #[derive(Clone)]
 pub enum Ast<'a> {
@@ -43,7 +44,7 @@ impl<'a> PartialEq for Value<'a> {
     }
 }
 
-pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) -> Value<'a> {
+pub fn eval<'a>(program: &Ast<'a>, variables: &mut Cow<HashMap<&'a str, Value<'a>>>) -> Value<'a> {
     use self::Ast::*;
     use self::Value::*;
 
@@ -58,23 +59,26 @@ pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) 
 
             match func {
                 Function(func) => {
-                    // Start a new scope, so no variables defined in the body of the
-                    // function leak into the surrounding scope.
-                    let mut new_scope = variables.clone();
-                    let &Func {
-                        ref args,
-                        ref body,
-                    } = &*func;
+                    let &Func { ref args, ref body, } = &*func;
+
                     if arguments.len() != args.len() {
                         println!("Called function with incorrect number of arguments (expected {}, got {})", args.len(), arguments.len());
                     }
-
-                    for (name, val) in args.into_iter().zip(arguments) {
-                        let val = eval(val, variables);
-                        new_scope.insert(name, val);
-                    }
-
                     let mut out = Void;
+                    // The type annotations here are needed to make `new_scope` be a `Cow<HashMap<…` and not a `Cow<Cow<HashMap<…`
+                    // A possible alternative to avoid the type annotations is Cow::Borrowed(&**variables)
+                    let mut new_scope: Cow<HashMap<_, _>> = if arguments.len() == 0 {
+                        Cow::Borrowed(variables)
+                    } else {
+                        // Start a new scope, so no variables defined in the body of the
+                        // function leak into the surrounding scope.
+                        let mut new_scope = variables.clone().into_owned();
+                        for (name, val) in args.into_iter().zip(arguments) {
+                            let val = eval(val, variables);
+                            new_scope.insert(name, val);
+                        }
+                        Cow::Owned(new_scope)
+                    };
 
                     for stmt in body {
                         out = eval(stmt, &mut new_scope);
@@ -94,7 +98,7 @@ pub fn eval<'a>(program: &Ast<'a>, variables: &mut HashMap<&'a str, Value<'a>>) 
         Define(name, value) => {
             let value = eval(value, variables);
 
-            variables.insert(&name, value);
+            variables.to_mut().insert(&name, value);
 
             Void
         }
@@ -150,7 +154,7 @@ mod benches {
 
     use self::test::{black_box, Bencher};
 
-    use super::{eval, expr, Value, HashMap};
+    use super::{eval, expr, Value, HashMap, Cow};
 
     // First we need some helper functions. These are used with the `InbuiltFunc`
     // constructor and act as native functions, similar to how you'd add functions
@@ -366,7 +370,7 @@ someval
 
         let (program, _) = expr().easy_parse(DEEP_NESTING).unwrap();
 
-        b.iter(|| black_box(eval(&program, &mut env)));
+        b.iter(|| black_box(eval(&program, &mut Cow::Borrowed(&env) )));
     }
 
     #[bench]
@@ -382,7 +386,7 @@ someval
             .unwrap();
 
         b.iter(|| {
-            let mut env = env.clone();
+            let mut env = Cow::Borrowed(&env);
             for line in &program {
                 black_box(eval(&line, &mut env));
             }
@@ -406,13 +410,13 @@ someval
 
         env.insert("ignore", Value::InbuiltFunc(ignore));
 
-        b.iter(|| black_box(eval(&program, &mut env)));
+        b.iter(|| black_box(eval(&program, &mut Cow::Borrowed(&env) )));
     }
 
     #[bench]
     fn run_nested_func(b: &mut Bencher) {
         let (program, _) = expr().easy_parse(NESTED_FUNC).unwrap();
-        let mut env = HashMap::default();
-        b.iter(|| black_box(eval(&program, &mut env)));
+        let env = HashMap::default();
+        b.iter(|| black_box(eval(&program, &mut Cow::Borrowed(&env) )));
     }
 }
